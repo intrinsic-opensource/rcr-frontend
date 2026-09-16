@@ -23,7 +23,8 @@ on:
       - main
   repository_dispatch:
     types: [on-rcr-trigger]
-
+  workflow_dispatch:
+        
 permissions:
   contents: read
   pages: write
@@ -65,10 +66,20 @@ jobs:
     - name: Build ghpages target
       run: bazel build //app/bcr:ghpages
 
-    - name: Extract release tarball
+    - name: Regenerate documentation
+      working-directory: ./data/bazel-central-registry
       run: |
-        mkdir -p site
-        tar -xf bazel-bin/app/bcr/release.tar -C site
+        bazel build //docs:html
+  
+    - name: Merge modules, docs and frontend
+      run: |
+        mkdir -p ./site/modules ./site/docs
+        touch ./site/.nojekyll
+        tar -xf bazel-bin/app/bcr/release.tar -C ./site
+        tar -xzf ./data/bazel-central-registry/bazel-bin/docs/html_docs.tar.gz -C ./site/docs
+        cp -R ./data/bazel-central-registry/bcr_staging/modules/* site/modules
+        cp -R ./data/bazel-central-registry/modules/* site/modules
+        echo -e "{\n\t\"mirrors\": []\n}" > ./site/bazel_registry.json
 
     - name: Setup Pages
       uses: actions/configure-pages@v5
@@ -76,7 +87,7 @@ jobs:
     - name: Upload artifact
       uses: actions/upload-pages-artifact@v3
       with:
-        path: 'site'
+        path: site
 
     - name: Deploy to GitHub Pages
       id: deployment
