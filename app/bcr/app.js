@@ -57,8 +57,8 @@ class RegistryApp extends App {
 	) {
 		super(opt_domHelper);
 
-		const pathPrefix = window.location.pathname.startsWith("/rcr-ui/")
-			? "/rcr-ui/"
+		const pathPrefix = window.location.pathname.startsWith("/rcr-frontend/")
+			? "/rcr-frontend/"
 			: "/";
 		this.history_.history_.setPathPrefix(pathPrefix);
 
@@ -632,8 +632,8 @@ class RegistryApp extends App {
 		}
 		// Legacy `/#/foo` bookmarks: pull the path out of the hash.
 		let path = url.pathname;
-		if (path.startsWith("/rcr-ui")) {
-			path = path.substring(7);
+		if (path.startsWith("/rcr-frontend")) {
+			path = path.substring(13);
 		}
 		if (path === "/" && url.hash.startsWith("#/")) {
 			path = url.hash.substring(1);
@@ -661,8 +661,8 @@ class RegistryApp extends App {
 		// The app uses path-based routing; hash links like `/#/maintainers/foo`
 		// also work, so check both.
 		let raw = window.location.pathname + window.location.hash;
-		if (raw.startsWith("/rcr-ui")) {
-			raw = raw.substring(7);
+		if (raw.startsWith("/rcr-frontend")) {
+			raw = raw.substring(13);
 		}
 		const segments = raw
 			.replace(/^[#/]+/, "")

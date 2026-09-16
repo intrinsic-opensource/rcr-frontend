@@ -12,8 +12,8 @@
 		// Dynamically set base href for subpath routing on GitHub Pages
 		(function () {
 			var base = document.createElement("base");
-			base.href = window.location.pathname.startsWith("/rcr-ui/")
-				? "/rcr-ui/"
+			base.href = window.location.pathname.startsWith("/rcr-frontend/")
+				? "/rcr-frontend/"
 				: "/";
 			document.write(base.outerHTML);
 		})();
@@ -46,7 +46,7 @@
 			var snapshot =
 				(meta.getAttribute("content") || "").replace(/\/+$/, "") || "/";
 			var current =
-				window.location.pathname.replace(/^\/rcr-ui/, "").replace(/\/+$/, "") || "/";
+				window.location.pathname.replace(/^\/rcr-frontend/, "").replace(/\/+$/, "") || "/";
 			if (current !== snapshot) {
 				document.documentElement.classList.add("bcr-booting");
 			}
