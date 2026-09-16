@@ -24,21 +24,25 @@ on:
   repository_dispatch:
     types: [on-rcr-trigger]
   workflow_dispatch:
-        
+
+# Prevents the runner's preinstalled Android SDK from leaking into
+# setup-bazel's environment.
+env:
+  ANDROID_HOME: ""
+
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: "pages"
   cancel-in-progress: false
 
 jobs:
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}     
+
+  # Builds the site into ./site and uploads it as the Pages artifact. Runs on
+  # pull requests too (as a build check), but the upload/deploy steps are
+  # skipped there so a PR can never publish to the live site.
+  build:
     runs-on: ubuntu-latest
     steps:
 
@@ -47,47 +51,78 @@ jobs:
       with:
         submodules: true
 
-    - name: Update submodule
-      run: |
-        cd data/bazel-central-registry
-        git fetch origin
-        git checkout main
-        cd ../..
-
     - name: Setup Bazel
       uses: bazel-contrib/setup-bazel@0.19.0
+      with:
+        bazelisk-cache: true
+        disk-cache: false
+        repository-cache: true
 
+    # bcr_init first: bcr_clean aborts unless the submodule is already an
+    # initialized git repo. bcr_update then moves it to the registry's latest
+    # main - everything below builds against that revision.
     - name: Clean and initialize BCR
-      run: make bcr_clean bcr_init bcr_update
+      run: make bcr_init bcr_clean bcr_update
 
-    - name: Build ghpages target
+    # //:bcr is the gazelle extension that walks the registry and generates
+    # //data/bazel-central-registry/modules:modules.
+    - name: Generate registry BUILD files
       run: bazel run //:bcr
-        
-    - name: Build ghpages target
-      run: bazel build //app/bcr:ghpages
 
-    - name: Regenerate documentation
+    # release_type=production enables minification plus home/module-page
+    # prerendering; --config=ci raises the prerender tab pool for CI-sized
+    # runners (see .bazelrc).
+    - name: Build release tarball
+      run: bazel build //app/bcr:release --config=ci --//app/bcr:release_type=production
+
+    # The make targets above sparse-checkout the submodule down to `modules`
+    # only, which removes docs/ (and MODULE.bazel, so it stops being its own
+    # Bazel workspace). Lift that here - after the parent build is done - so
+    # the docs come from the same revision bcr_update pulled, without the
+    # restored MODULE.bazel acting as a repo boundary that would hide
+    # //data/bazel-central-registry/modules from the parent workspace.
+    - name: Regenerate docs
       working-directory: ./data/bazel-central-registry
       run: |
+        git sparse-checkout disable
         bazel build //docs:html
-  
-    - name: Merge modules, docs and frontend
+
+    - name: Assemble site
       run: |
+        shopt -s nullglob
         mkdir -p ./site/modules ./site/docs
         touch ./site/.nojekyll
         tar -xf bazel-bin/app/bcr/release.tar -C ./site
         tar -xzf ./data/bazel-central-registry/bazel-bin/docs/html_docs.tar.gz -C ./site/docs
-        cp -R ./data/bazel-central-registry/bcr_staging/modules/* site/modules
-        cp -R ./data/bazel-central-registry/modules/* site/modules
+        cp -R ./data/bazel-central-registry/bcr_staging/modules/* ./site/modules
+        cp -R ./data/bazel-central-registry/modules/* ./site/modules
         echo -e "{\n\t\"mirrors\": []\n}" > ./site/bazel_registry.json
+        # GitHub Pages has no SPA rewrite rule, so 404.html is the client-side
+        # router's fallback for any route without a prerendered index.html.
+        # Mirrors what //rules:ghpages.bzl does when deploying directly.
+        cp ./site/index.html ./site/404.html
 
     - name: Setup Pages
+      if: github.event_name != 'pull_request'
       uses: actions/configure-pages@v5
 
     - name: Upload artifact
+      if: github.event_name != 'pull_request'
       uses: actions/upload-pages-artifact@v3
       with:
         path: site
+
+  deploy:
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
 
     - name: Deploy to GitHub Pages
       id: deployment
